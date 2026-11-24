@@ -2,99 +2,179 @@ package app.firetvtest;
 
 import android.app.Activity;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
-import android.view.Gravity;
+import android.os.Message;
 import android.view.KeyEvent;
 import android.view.View;
-import android.widget.GridLayout;
-import android.widget.LinearLayout;
-import android.widget.TextView;
+import android.view.ViewGroup;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 
-public class MainActivity extends Activity implements View.OnFocusChangeListener, View.OnClickListener {
-    private static final int ROWS = 3, COLS = 4;
-    private static final int[] COLORS = {0xFF1E88E5, 0xFF43A047, 0xFFE53935, 0xFFFB8C00,
-            0xFF8E24AA, 0xFF00ACC1, 0xFF6D4C41, 0xFF3949AB, 0xFFD81B60, 0xFF7CB342, 0xFF546E7A, 0xFFFDD835};
-    private TextView status;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Thin shell: the whole UI lives in index.html on the main branch of the GitHub repo.
+ * Every launch downloads the latest index.html, so edits pushed to main show up without
+ * reinstalling the APK. Falls back to the last downloaded copy, then to the bundled copy.
+ */
+public class MainActivity extends Activity {
+    private static final String REMOTE_URL =
+            "https://raw.githubusercontent.com/tylerhartmanbiz/firetv/main/index.html";
+    private static final Pattern BASE_RE = Pattern.compile("EXAMPLE_BASE\\s*=\\s*[\"'`]([^\"'`]+)[\"'`]");
+
+    private FrameLayout root;
+    private WebView web;
+    private View fullscreenView;
+    private WebChromeClient.CustomViewCallback fullscreenCallback;
 
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-        float d = getResources().getDisplayMetrics().density;
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-
-        TextView title = new TextView(this);
-        title.setText("test");
-        title.setTextSize(40);
-        title.setTextColor(Color.WHITE);
-        title.setGravity(Gravity.CENTER);
-        root.addView(title);
-
-        status = new TextView(this);
-        status.setText("Use the remote: up / down / left / right / select");
-        status.setTextSize(18);
-        status.setTextColor(0xFFBBBBBB);
-        status.setGravity(Gravity.CENTER);
-        status.setPadding(0, 0, 0, (int) (16 * d));
-        root.addView(status);
-
-        GridLayout grid = new GridLayout(this);
-        grid.setRowCount(ROWS);
-        grid.setColumnCount(COLS);
-        int w = (int) (150 * d), h = (int) (90 * d), m = (int) (10 * d);
-        for (int i = 0; i < ROWS * COLS; i++) {
-            int n = i + 1;
-            TextView box = new TextView(this);
-            box.setText("Box " + n);
-            box.setTextSize(22);
-            box.setTextColor(Color.WHITE);
-            box.setGravity(Gravity.CENTER);
-            box.setFocusable(true);
-            box.setClickable(true);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(COLORS[i]);
-            bg.setCornerRadius(12 * d);
-            bg.setStroke((int) (4 * d), Color.TRANSPARENT);
-            box.setBackground(bg);
-            box.setAlpha(0.55f);
-            box.setTag(bg);
-            box.setId(1000 + n);
-            box.setOnFocusChangeListener(this);
-            box.setOnClickListener(this);
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-            lp.width = w; lp.height = h; lp.setMargins(m, m, m, m);
-            grid.addView(box, lp);
-        }
-        root.addView(grid);
+        web = new WebView(this);
+        web.setBackgroundColor(Color.BLACK);
+        root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
-        grid.getChildAt(0).requestFocus();
+
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        s.setJavaScriptCanOpenWindowsAutomatically(false);
+        s.setSupportMultipleWindows(true); // so window.open goes to onCreateWindow, where it is blocked
+        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
+
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                // Keep the app page in place: block ads/redirects trying to navigate the main page away.
+                return r.isForMainFrame();
+            }
+        });
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView v, boolean dialog, boolean userGesture, Message m) {
+                return false; // block popups
+            }
+
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback cb) {
+                if (fullscreenView != null) { cb.onCustomViewHidden(); return; }
+                fullscreenView = view;
+                fullscreenCallback = cb;
+                root.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+
+            @Override
+            public void onHideCustomView() { exitFullscreen(); }
+        });
+
+        loadLatest();
     }
 
-    public void onFocusChange(View v, boolean has) {
-        ((GradientDrawable) v.getTag()).setStroke((int) (4 * getResources().getDisplayMetrics().density), has ? Color.WHITE : Color.TRANSPARENT);
-        v.setAlpha(has ? 1f : 0.55f);
-        v.setScaleX(has ? 1.1f : 1f);
-        v.setScaleY(has ? 1.1f : 1f);
-        if (has) status.setText("Focused: Box " + (v.getId() - 1000));
+    private void loadLatest() {
+        new Thread(new Runnable() { public void run() {
+            String html = download();
+            File cache = new File(getFilesDir(), "index.html");
+            if (html != null) {
+                write(cache, html);
+            } else {
+                html = read(cache);
+                if (html == null) html = readAsset();
+            }
+            final String page = html == null ? "<body style='background:#000;color:#fff'>Could not load app.</body>" : html;
+            runOnUiThread(new Runnable() { public void run() { show(page); } });
+        }}).start();
     }
 
-    public void onClick(View v) { status.setText("Selected: Box " + (v.getId() - 1000)); }
+    private void show(String html) {
+        Matcher m = BASE_RE.matcher(html);
+        String base = m.find() ? m.group(1).replaceAll("/+$", "") + "/" : REMOTE_URL;
+        web.loadDataWithBaseURL(base, html, "text/html", "UTF-8", null);
+        web.requestFocus();
+    }
+
+    private String download() {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(REMOTE_URL + "?t=" + System.currentTimeMillis()).openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setUseCaches(false);
+            c.setRequestProperty("Cache-Control", "no-cache");
+            if (c.getResponseCode() != 200) return null;
+            String s = readStream(c.getInputStream());
+            return s.contains("<") ? s : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String readStream(InputStream in) throws Exception {
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return out.toString("UTF-8");
+        } finally {
+            in.close();
+        }
+    }
+
+    private static String read(File f) {
+        try { return f.exists() ? readStream(new FileInputStream(f)) : null; } catch (Exception e) { return null; }
+    }
+
+    private String readAsset() {
+        try { return readStream(getAssets().open("index.html")); } catch (Exception e) { return null; }
+    }
+
+    private static void write(File f, String s) {
+        try (FileOutputStream o = new FileOutputStream(f)) { o.write(s.getBytes("UTF-8")); } catch (Exception ignored) { }
+    }
+
+    private void exitFullscreen() {
+        if (fullscreenView == null) return;
+        root.removeView(fullscreenView);
+        fullscreenView = null;
+        if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
+        fullscreenCallback = null;
+    }
 
     @Override
     public boolean onKeyDown(int code, KeyEvent e) {
-        String k = code == KeyEvent.KEYCODE_DPAD_UP ? "UP" : code == KeyEvent.KEYCODE_DPAD_DOWN ? "DOWN"
-                : code == KeyEvent.KEYCODE_DPAD_LEFT ? "LEFT" : code == KeyEvent.KEYCODE_DPAD_RIGHT ? "RIGHT" : null;
-        if (k != null) {
-            View f = getCurrentFocus();
-            String name = f instanceof TextView ? ((TextView) f).getText().toString() : "?";
-            boolean moved = super.onKeyDown(code, e);
-            View f2 = getCurrentFocus();
-            if (f2 == f) status.setText(k + " pressed (edge) - still on " + name);
-            return moved;
-        }
+        if (code == KeyEvent.KEYCODE_MENU) { loadLatest(); return true; } // Menu button = reload latest
         return super.onKeyDown(code, e);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (fullscreenView != null) { exitFullscreen(); return; }
+        // Back closes the player if it is open, otherwise exits the app.
+        web.evaluateJavascript(
+                "(function(){try{if(isPlayerOpen){closePlayer();return 'closed';}}catch(e){}return 'none';})()",
+                new android.webkit.ValueCallback<String>() {
+                    public void onReceiveValue(String r) { if (!"\"closed\"".equals(r)) finish(); }
+                });
+    }
+
+    @Override
+    protected void onDestroy() {
+        web.destroy();
+        super.onDestroy();
     }
 }
