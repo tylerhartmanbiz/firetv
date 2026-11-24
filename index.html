@@ -236,8 +236,8 @@
 
     <script>
         // CONFIGURATION
-        const EXAMPLE_BASE = "https://goonjarahd.com";
-        const API_ENDPOINT = `${EXAMPLE_BASE}/ajax/search`;
+        const https://ww1.goojara.to/watch-trends-genre_BASE = "https://goonjarahd.com";
+        const API_ENDPOINT = `${https://ww1.goojara.to/watch-trends-genre_BASE}/ajax/search`;
 
         // DOM Elements
         const searchInput = document.getElementById('search-input');
@@ -270,7 +270,7 @@
                     const response = await fetch(`${API_ENDPOINT}?w=${encodeURIComponent(query)}`);
                     const data = await response.json();
 
-                    // Parse HTML content returned by EXAMPLE's AJAX
+                    // Parse HTML content returned by https://ww1.goojara.to/watch-trends-genre's AJAX
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(data.content, 'text/html');
                     const cards = doc.querySelectorAll('.fms');
@@ -383,7 +383,7 @@
                 const doc = parser.parseFromString(html, 'text/html');
 
                 // Find the links container
-                // EXAMPLE often puts links inside a div with class 'lts' or similar
+                // https://ww1.goojara.to/watch-trends-genre often puts links inside a div with class 'lts' or similar
                 const linksContainer = doc.querySelector('.lts') || doc.querySelector('.flw-szn');
 
                 currentLinks = [];
@@ -436,7 +436,7 @@
         function loadVideo(url) {
             let fullUrl = url;
             if(url.startsWith('//')) fullUrl = 'https:' + url;
-            else if(!url.startsWith('http')) fullUrl = EXAMPLE_BASE + url;
+            else if(!url.startsWith('http')) fullUrl = https://ww1.goojara.to/watch-trends-genre_BASE + url;
 
             videoFrame.src = fullUrl;
 
@@ -452,7 +452,7 @@
                 // Check if the iframe has loaded a different domain or has a popup overlay
                 // Since we can't access cross-origin iframe content easily, we check for common patterns
                 // Or we rely on user interaction.
-                // For EXAMPLE, popups often appear immediately after load.
+                // For https://ww1.goojara.to/watch-trends-genre, popups often appear immediately after load.
 
                 // Heuristic: If the iframe URL changes significantly or if we detect a click outside
                 // we assume a popup might have opened.
@@ -480,7 +480,7 @@
             let url = currentLinks[currentLinkIndex];
             let fullUrl = url;
             if(url.startsWith('//')) fullUrl = 'https:' + url;
-            else if(!url.startsWith('http')) fullUrl = EXAMPLE_BASE + url;
+            else if(!url.startsWith('http')) fullUrl = https://ww1.goojara.to/watch-trends-genre_BASE + url;
 
             loadVideo(fullUrl);
         });

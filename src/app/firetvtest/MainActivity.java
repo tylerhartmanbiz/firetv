@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
 public class MainActivity extends Activity {
     private static final String REMOTE_URL =
             "https://raw.githubusercontent.com/tylerhartmanbiz/firetv/main/index.html";
-    private static final Pattern BASE_RE = Pattern.compile("EXAMPLE_BASE\\s*=\\s*[\"'`]([^\"'`]+)[\"'`]");
+    private static final Pattern BASE_RE = Pattern.compile("https://ww1.goojara.to/watch-trends-genre_BASE\\s*=\\s*[\"'`]([^\"'`]+)[\"'`]");
 
     private FrameLayout root;
     private WebView web;
