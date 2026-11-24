@@ -15,3 +15,5 @@ $BT/zipalign -f -p 4 build/unsigned.apk build/aligned.apk
   -alias test -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Test" >/dev/null 2>&1
 $BT/apksigner sign --ks test.keystore --ks-pass pass:testtest --out streamflow.apk build/aligned.apk
 $BT/apksigner verify --verbose streamflow.apk | head -5
+grep -o 'versionCode="[0-9]*"' AndroidManifest.xml | grep -o '[0-9]*' > version.txt
+echo "version.txt = $(cat version.txt)"
