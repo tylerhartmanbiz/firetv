@@ -1,21 +1,3 @@
-Here is the complete, fixed index.html file.
-
-Changes made:
-Single Variable: I added a variable named EXAMPLE at the very top of the script. Change this one string to update the domain 
-CORS Fix: Added the api.allorigins.win proxy so Fire TV can fetch the search results without blocking them.
-Seamless Navigation: Arrow keys work for D-Pad navigation. "Enter" selects.
-Popup/Link Logic: The player overlay has a "Next Link" button that cycles through available streams.
-Instructions:
-Go to your repo: https://github.com/tylerhartmanbiz/firetv
-Click on index.html.
-Click the Edit (pencil) icon.
-Delete everything in the editor.
-Paste the code below.
-Scroll down and click Commit changes.
-html
-Preview
-Download
-Copy
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -196,7 +178,7 @@ Copy
 <body>
 
     <header>
-        <h1></h1>
+        <h1>StreamFlow</h1>
         <div id="search-container">
             <input type="text" id="search-input" placeholder="Search Movies & Shows..." autocomplete="off">
         </div>
@@ -217,7 +199,7 @@ Copy
         // ==========================================
         // CHANGE THIS VARIABLE TO UPDATE THE DOMAIN
         // ==========================================
-        const EXAMPLE = "https://ww1.goojara.to/watch-trends-genre" 
+        const EXAMPLE = "https://goonjahd.com"; 
         // ==========================================
 
         const API_ENDPOINT = `${EXAMPLE}/ajax/search`;
@@ -242,7 +224,7 @@ Copy
                 
                 showLoader(true);
                 try {
-                    // Use CORS proxy to bypass Fire TV restrictions
+                    // Use CORS proxy to bypass Fire TV network restrictions
                     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(API_ENDPOINT)}&w=${encodeURIComponent(query)}`;
                     
                     const response = await fetch(proxyUrl);
