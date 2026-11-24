@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamFlow</title>
+<style>
+    :root {
+        --bg-color: #0f0f0f;
+        --surface-color: #1f1f1f;
+        --primary-color: #e50914;
+        --text-color: #ffffff;
+        --text-secondary: #b3b3b3;
+        --focus-border: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; background: var(--bg-color); color: var(--text-color);
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        overflow: hidden; display: flex; flex-direction: column; height: 100vh;
+    }
+    /* TV-safe area: ~3% overscan padding */
+    header {
+        padding: 20px 3vw; background: var(--surface-color); display: flex; align-items: center; gap: 15px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 100;
+    }
+    h1 { margin: 0; font-size: 1.5rem; color: var(--primary-color); text-transform: uppercase; letter-spacing: 2px; }
+    #search-container { flex-grow: 1; }
+    #search-input {
+        width: 100%; padding: 12px 20px; font-size: 1.2rem; border: 2px solid transparent; border-radius: 5px;
+        background: #333; color: white; outline: none;
+    }
+    #search-input.zone-active { border-color: var(--primary-color); background: #444; }
+    #section-title { padding: 14px 3vw 0; color: var(--text-secondary); font-size: 1rem; }
+    main {
+        flex-grow: 1; padding: 20px 3vw 40px; overflow-y: auto; display: flex; flex-wrap: wrap;
+        gap: 18px; align-content: flex-start;
+    }
+    main::-webkit-scrollbar { display: none; }
+    .movie-card {
+        width: 160px; height: 240px; background: var(--surface-color); border-radius: 8px; overflow: hidden;
+        position: relative; transition: transform 0.15s, box-shadow 0.15s; border: 3px solid transparent;
+    }
+    .movie-card img { width: 100%; height: 100%; object-fit: cover; }
+    .movie-card .title-overlay {
+        position: absolute; bottom: 0; left: 0; right: 0; padding: 10px; font-size: 0.9rem; font-weight: bold;
+        background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
+    }
+    .movie-card.selected {
+        transform: scale(1.1); border-color: var(--focus-border); box-shadow: 0 0 20px rgba(255,255,255,0.5); z-index: 10;
+    }
+    #loader {
+        display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        font-size: 2rem; color: var(--primary-color); z-index: 500;
+    }
+    #toast {
+        position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #333; color: #fff;
+        padding: 12px 24px; border-radius: 6px; z-index: 600; display: none; font-size: 1.1rem;
+    }
+    #player-overlay { position: fixed; inset: 0; background: black; z-index: 300; display: none; }
+    #video { width: 100%; height: 100%; background: black; }
+    .player-controls {
+        position: absolute; bottom: 0; left: 0; width: 100%; padding: 20px 3vw 30px;
+        background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); opacity: 0; transition: opacity 0.3s;
+    }
+    .player-controls.active { opacity: 1; }
+    #now-title { font-size: 1.3rem; font-weight: bold; margin-bottom: 4px; }
+    #now-source { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 10px; }
+    #progress { height: 6px; background: #444; border-radius: 3px; overflow: hidden; }
+    #progress-fill { height: 100%; width: 0; background: var(--primary-color); }
+    #time { color: var(--text-secondary); font-size: 0.9rem; margin: 6px 0 12px; }
+    .btn-row { display: flex; justify-content: center; gap: 16px; }
+    .ctrl-btn {
+        background: var(--surface-color); color: white; border: 1px solid white; padding: 10px 20px;
+        font-size: 1rem; border-radius: 4px;
+    }
+    .ctrl-btn.selected { background: var(--primary-color); border-color: var(--primary-color); }
+    #hint { color: #777; font-size: 0.8rem; text-align: center; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+    <h1>StreamFlow</h1>
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="Search public-domain movies..." autocomplete="off">
+    </div>
+</header>
+<div id="section-title"></div>
+<main id="results-grid"></main>
+<div id="loader">Loading...</div>
+<div id="toast"></div>
+
+<div id="player-overlay">
+    <video id="video" preload="auto"></video>
+    <div class="player-controls" id="player-controls">
+        <div id="now-title"></div>
+        <div id="now-source"></div>
+        <div id="progress"><div id="progress-fill"></div></div>
+        <div id="time">0:00 / 0:00</div>
+        <div class="btn-row">
+            <button class="ctrl-btn" data-act="rew">&#9664;&#9664; 10s</button>
+            <button class="ctrl-btn" data-act="play" id="btn-play">Pause</button>
+            <button class="ctrl-btn" data-act="ff">10s &#9654;&#9654;</button>
+            <button class="ctrl-btn" data-act="next">Next Source</button>
+            <button class="ctrl-btn" data-act="close">Close</button>
+        </div>
+        <div id="hint">Select: play/pause &middot; Left/Right: seek &middot; Up/Down: buttons &middot; Back: close</div>
+    </div>
+</div>
+
+<script>
+// Source: Internet Archive "feature_films" collection (public-domain films, CORS-enabled API).
+var ARCHIVE = 'https://archive.org';
+
+var searchInput = document.getElementById('search-input');
+var grid = document.getElementById('results-grid');
+var sectionTitle = document.getElementById('section-title');
+var loader = document.getElementById('loader');
+var toastEl = document.getElementById('toast');
+var overlay = document.getElementById('player-overlay');
+var video = document.getElementById('video');
+var controls = document.getElementById('player-controls');
+var buttons = Array.prototype.slice.call(controls.querySelectorAll('.ctrl-btn'));
+
+// zone: 'search' | 'grid' | 'player'
+var zone = 'search';
+var results = [];
+var sel = 0;          // selected card index
+var btnSel = -1;      // selected player button (-1 = none, arrows seek)
+var sources = [];
+var srcIdx = 0;
+var current = null;
+var hideTimer = null;
+
+// ---------- helpers ----------
+function showLoader(on) { loader.style.display = on ? 'block' : 'none'; }
+function toast(msg) {
+    toastEl.textContent = msg; toastEl.style.display = 'block';
+    clearTimeout(toast.t); toast.t = setTimeout(function () { toastEl.style.display = 'none'; }, 3000);
+}
+function fmt(s) {
+    if (!isFinite(s)) return '0:00';
+    s = Math.floor(s);
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (x < 10 ? '0' : '') + x;
+}
+
+// ---------- search ----------
+async function search(query) {
+    var q = 'collection:feature_films AND mediatype:movies';
+    var clean = (query || '').replace(/[^\w\s'-]/g, ' ').trim();
+    if (clean) q += ' AND title:(' + clean + ')';
+    var url = ARCHIVE + '/advancedsearch.php?q=' + encodeURIComponent(q) +
+        '&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=60&output=json';
+    showLoader(true);
+    try {
+        var r = await fetch(url);
+        var data = await r.json();
+        results = data.response.docs.map(function (d) {
+            return { id: d.identifier, title: Array.isArray(d.title) ? d.title[0] : (d.title || d.identifier), year: d.year };
+        });
+        renderGrid();
+        sectionTitle.textContent = clean ? (results.length + ' results for "' + clean + '"') : 'Popular public-domain films';
+        if (results.length) { setZone('grid'); select(0); }
+        else { toast('No results'); setZone('search'); }
+    } catch (e) {
+        toast('Search failed. Check your connection.');
+    } finally { showLoader(false); }
+}
+
+function renderGrid() {
+    grid.innerHTML = '';
+    results.forEach(function (item, i) {
+        var el = document.createElement('div');
+        el.className = 'movie-card';
+        var img = document.createElement('img');
+        img.loading = 'lazy';
+        img.src = ARCHIVE + '/services/img/' + encodeURIComponent(item.id);
+        img.alt = '';
+        var t = document.createElement('div');
+        t.className = 'title-overlay';
+        t.textContent = item.title + (item.year ? ' (' + item.year + ')' : '');
+        el.appendChild(img); el.appendChild(t);
+        el.addEventListener('click', function () { select(i); openTitle(i); });
+        grid.appendChild(el);
+    });
+}
+
+// ---------- focus / navigation ----------
+function setZone(z) {
+    zone = z;
+    searchInput.classList.toggle('zone-active', z === 'search');
+    if (z === 'search') { clearSelection(); searchInput.focus(); }
+    else searchInput.blur();
+    if (z === 'grid') select(sel);
+}
+function clearSelection() {
+    Array.prototype.forEach.call(grid.children, function (c) { c.classList.remove('selected'); });
+}
+function select(i) {
+    var cards = grid.children;
+    if (!cards.length) return;
+    sel = Math.max(0, Math.min(i, cards.length - 1));
+    clearSelection();
+    cards[sel].classList.add('selected');
+    cards[sel].scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+// Number of cards per row, measured from the real layout.
+function columns() {
+    var cards = grid.children, n = 0;
+    if (!cards.length) return 1;
+    var top = cards[0].offsetTop;
+    while (n < cards.length && cards[n].offsetTop === top) n++;
+    return n || 1;
+}
+
+document.addEventListener('keydown', function (e) {
+    var k = e.key, code = e.keyCode;
+    var enter = k === 'Enter' || code === 13 || code === 23;
+    if (zone === 'player') { playerKey(e, k, enter); return; }
+
+    if (zone === 'search') {
+        if (enter) { e.preventDefault(); search(searchInput.value); }
+        else if (k === 'ArrowDown' && results.length) { e.preventDefault(); setZone('grid'); }
+        return; // let Left/Right move the text cursor
+    }
+
+    // zone === 'grid'
+    var cols = columns();
+    switch (k) {
+        case 'ArrowRight': e.preventDefault(); if (sel < results.length - 1) select(sel + 1); break;
+        case 'ArrowLeft': e.preventDefault(); if (sel > 0) select(sel - 1); break;
+        case 'ArrowDown':
+            e.preventDefault();
+            if (sel + cols < results.length) select(sel + cols);
+            else if (Math.floor(sel / cols) < Math.floor((results.length - 1) / cols)) select(results.length - 1);
+            break;
+        case 'ArrowUp':
+            e.preventDefault();
+            if (sel - cols >= 0) select(sel - cols); else setZone('search');
+            break;
+        default: if (enter) { e.preventDefault(); openTitle(sel); }
+    }
+}, true);
+
+// ---------- player ----------
+async function openTitle(i) {
+    var item = results[i];
+    if (!item) return;
+    showLoader(true);
+    try {
+        var r = await fetch(ARCHIVE + '/metadata/' + encodeURIComponent(item.id));
+        var meta = await r.json();
+        var files = (meta.files || []).filter(function (f) { return /\.mp4$/i.test(f.name); });
+        // Prefer full-quality h.264, then smaller encodes.
+        files.sort(function (a, b) { return rank(a) - rank(b); });
+        sources = files.map(function (f) {
+            return {
+                label: f.format || 'MP4',
+                url: ARCHIVE + '/download/' + encodeURIComponent(item.id) + '/' + f.name.split('/').map(encodeURIComponent).join('/')
+            };
+        });
+        if (!sources.length) { toast('No playable video for this title.'); return; }
+        current = item;
+        startPlayer();
+    } catch (e) {
+        toast('Error loading details.');
+    } finally { showLoader(false); }
+}
+function rank(f) {
+    var fmtName = (f.format || '').toLowerCase();
+    if (fmtName === 'h.264' || fmtName === 'mpeg4') return 0;
+    if (fmtName.indexOf('512kb') >= 0) return 2;
+    return 1;
+}
+
+function startPlayer() {
+    zone = 'player';
+    searchInput.blur();
+    overlay.style.display = 'block';
+    srcIdx = 0;
+    loadSource();
+}
+function loadSource() {
+    var s = sources[srcIdx];
+    document.getElementById('now-title').textContent = current.title;
+    document.getElementById('now-source').textContent = 'Source ' + (srcIdx + 1) + '/' + sources.length + ' · ' + s.label;
+    video.src = s.url;
+    video.play().catch(function () {});
+    showControls();
+}
+function nextSource(auto) {
+    if (sources.length < 2) { if (auto) toast('Video failed to load.'); return; }
+    srcIdx = (srcIdx + 1) % sources.length;
+    if (auto) toast('Trying next source...');
+    loadSource();
+}
+function closePlayer() {
+    video.pause(); video.removeAttribute('src'); video.load();
+    overlay.style.display = 'none';
+    btnSel = -1; selectBtn();
+    setZone('grid');
+}
+function seek(d) {
+    if (isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(video.duration - 1, video.currentTime + d));
+}
+function togglePlay() { if (video.paused) video.play().catch(function () {}); else video.pause(); }
+function doAct(act) {
+    if (act === 'play') togglePlay();
+    else if (act === 'rew') seek(-10);
+    else if (act === 'ff') seek(10);
+    else if (act === 'next') nextSource(false);
+    else if (act === 'close') closePlayer();
+}
+function showControls() {
+    controls.classList.add('active');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () {
+        if (!video.paused) { controls.classList.remove('active'); btnSel = -1; selectBtn(); }
+    }, 4000);
+}
+function selectBtn() {
+    buttons.forEach(function (b, i) { b.classList.toggle('selected', i === btnSel); });
+}
+function playerKey(e, k, enter) {
+    e.preventDefault();
+    var visible = controls.classList.contains('active');
+    showControls();
+    if (k === 'ArrowUp' || k === 'ArrowDown') {
+        btnSel = btnSel < 0 ? 1 : -1; selectBtn(); return;  // toggle between seek mode and buttons
+    }
+    if (btnSel >= 0) {
+        if (k === 'ArrowLeft') { btnSel = Math.max(0, btnSel - 1); selectBtn(); }
+        else if (k === 'ArrowRight') { btnSel = Math.min(buttons.length - 1, btnSel + 1); selectBtn(); }
+        else if (enter) doAct(buttons[btnSel].dataset.act);
+        return;
+    }
+    if (k === 'ArrowLeft') seek(-10);
+    else if (k === 'ArrowRight') seek(10);
+    else if (enter && visible) togglePlay();
+    else if (k === ' ' || k === 'MediaPlayPause') togglePlay();
+}
+buttons.forEach(function (b) { b.addEventListener('click', function () { doAct(b.dataset.act); }); });
+
+video.addEventListener('timeupdate', function () {
+    var d = video.duration;
+    document.getElementById('progress-fill').style.width = (isFinite(d) && d ? video.currentTime / d * 100 : 0) + '%';
+    document.getElementById('time').textContent = fmt(video.currentTime) + ' / ' + fmt(d);
+});
+video.addEventListener('play', function () { document.getElementById('btn-play').textContent = 'Pause'; showControls(); });
+video.addEventListener('pause', function () { document.getElementById('btn-play').textContent = 'Play'; showControls(); });
+video.addEventListener('error', function () { if (zone === 'player' && video.getAttribute('src')) nextSource(true); });
+
+// ---------- hooks called from the Android shell ----------
+// Back button: returns true if handled, false to let the app exit.
+window.handleBack = function () {
+    if (zone === 'player') { closePlayer(); return true; }
+    if (zone === 'grid') { setZone('search'); return true; }
+    return false;
+};
+window.onRemoteKey = function (key) {
+    if (zone !== 'player') { if (key === 'playpause' && zone === 'grid') openTitle(sel); return; }
+    showControls();
+    if (key === 'playpause') togglePlay();
+    else if (key === 'ff') seek(30);
+    else if (key === 'rew') seek(-30);
+};
+window.onAppPause = function () { if (zone === 'player') video.pause(); };
+
+// Start with popular titles so there's something to browse.
+search('');
+</script>
+</body>
+</html>
