@@ -1,4 +1,4 @@
-package app.streamflow;
+package app.firetvtest;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
     private void loadUi(final boolean manual) {
         new Thread(new Runnable() { public void run() {
             String html = null;
-            try { html = new String(get(REPO_RAW + "assets/index.html?t=" + System.currentTimeMillis()), "UTF-8"); }
+            try { html = new String(get(REPO_RAW + "index.html?t=" + System.currentTimeMillis()), "UTF-8"); }
             catch (Exception ignored) {}
             File cache = new File(getFilesDir(), "index.html");
             if (html != null && html.contains("<html")) {
@@ -96,7 +96,7 @@ public class MainActivity extends Activity {
             updateOffered = true;
             runOnUiThread(new Runnable() { public void run() {
                 new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("StreamFlow update available")
+                    .setTitle("Test app update available")
                     .setMessage("Download and install the new version now?")
                     .setPositiveButton("Update", new DialogInterface.OnClickListener() {
                         public void onClick(DialogInterface d, int w) { downloadAndInstall(); }
@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
 
     private void downloadAndInstall() {
         if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            Toast.makeText(this, "Allow StreamFlow to install apps, then press Back", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Allow Test to install apps, then press Back", Toast.LENGTH_LONG).show();
             updateOffered = false;
             startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
             return;
@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() { public void run() {
             try {
                 File apk = new File(getCacheDir(), ApkProvider.FILE);
-                write(apk, get(REPO_RAW + "streamflow.apk?t=" + System.currentTimeMillis()));
+                write(apk, get(REPO_RAW + "test.apk?t=" + System.currentTimeMillis()));
                 Intent i = new Intent(Intent.ACTION_VIEW);
                 i.setDataAndType(Uri.parse("content://" + getPackageName() + ".apk/" + ApkProvider.FILE),
                         "application/vnd.android.package-archive");

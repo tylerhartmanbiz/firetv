@@ -1,4 +1,4 @@
-package app.streamflow;
+package app.firetvtest;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
